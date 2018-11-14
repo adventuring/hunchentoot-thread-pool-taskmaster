@@ -8,4 +8,3 @@
   (:export #:thread-pool-taskmaster
            #:*developmentp*
            #:with-pool-thread-restarts))
-
