@@ -87,7 +87,7 @@
                           "Error signalled: worker ~a: ~
 SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
                           ,name condition)
-           (invoke-restart 'abandon)))
+           (abort)))
         (error
          (lambda (condition)
            (verbose:fatal '(:thread-pool-worker :worker-error)
