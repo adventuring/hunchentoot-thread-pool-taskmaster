@@ -87,7 +87,7 @@
                           "Error signalled: worker ~a: ~
 SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
                           ,name condition)
-           (invoke-restart 'abandon)))
+           (abort)))
         (error
          (lambda (condition)
            (verbose:fatal '(:thread-pool-worker :worker-error)
@@ -119,18 +119,12 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
     `(tagbody ,restart-top
         (let ((,mulligan *mulligans*))
           (restart-bind
-              ((restart (lambda () (go ,restart-top))
+              ((continue (lambda () (go ,restart-top))
                  :report-function (lambda (s)
                                     (princ (concatenate 'string "Restart " ,name) s)))
-               (abandon #'null
-                 :report-function (lambda (s)
-                                    (princ (concatenate 'string "Abandon " ,name) s)))
-               (continue (lambda () (go ,restart-top))
-                 :report-function (lambda (s)
-                                    (princ "(synonym for Restart)" s)))
                (abort #'null
                  :report-function (lambda (s)
-                                    (princ "Skip this job (lose it)" s))))
+                                    (princ (concatenate 'string "Abandon " ,name) s))))
             (with-mulligan-handlers (,name ,mulligan)
               ,@body))))))
 
