@@ -108,9 +108,10 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
         (condition
          (lambda (condition)
            (verbose:debug '(:thread-pool-worker :worker-signal :work-abandoned)
-                          "Condition signalled: worker ~a signal ~:(~a~)~%~a"
-                          ,name (class-of condition) condition)
-           (invoke-restart 'abandon))))
+                          "Condition signalled: worker ~a signal ~:(~a~)~%~a~%~s"
+                          ,name (class-of condition) condition
+                          (trivial-backtrace:backtrace-string condition))
+           (abort))))
      ,@body))
 
 (defmacro with-pool-thread-restarts ((name) &body body)
