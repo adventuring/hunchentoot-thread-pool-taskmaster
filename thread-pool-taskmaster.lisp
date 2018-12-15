@@ -43,7 +43,7 @@
          (taskmaster-max-thread-count taskmaster)
          :max-queue-size +max-queue-size-for-thread-pool+
          :name "Web Workers"
-         :resignal-job-conditions (not (swank-connected-p))))
+         :resignal-job-conditions (swank-connected-p)))
   (cl-threadpool:start (taskmaster-thread-pool taskmaster))
   (name-all-threads-idle taskmaster))
 
