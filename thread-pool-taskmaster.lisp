@@ -32,7 +32,7 @@
               (format nil "Idle Web Worker (#~d of ~d)" i count))))
 
 (defun swank-connected-p ()
-  "Detect whether Swank is connected. 
+  "Detect whether Swank is connected.
 
 Used to determine whether to resignal errors."
   (and (find-package "SWANK")
@@ -200,7 +200,7 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
   (handler-bind
       ((error
         (lambda (cond)
-          ;; need  to  bind  *ACCEPTOR*  so that  LOG-MESSAGE*  can  do
+          ;; need  to  bind  *ACCEPTOR*  so  that  LOG-MESSAGE*  can  do
           ;; its work.
           (let ((*acceptor* (taskmaster-acceptor taskmaster)))
             (ignore-errors
@@ -233,6 +233,6 @@ Tried to start a thread named ~a with ~s"
 ~:[all interfaces~;~:*Address ~a~], ~
 Port ~d"
                        (acceptor-address (taskmaster-acceptor taskmaster))
-                       
+
                        (the (integer 1 65534)
                             (acceptor-port (taskmaster-acceptor taskmaster)))))))
