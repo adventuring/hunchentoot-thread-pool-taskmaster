@@ -15,7 +15,8 @@
 (defconstant +single-core-threads+ 4
   "More threads than otherwise expected on a single-core machine.")
 
-(defconstant +max-queue-size-for-thread-pool+ #x100)
+(defconstant +max-queue-size-for-thread-pool+ #x100
+  "What is the maximum size allowed for a thread pool?")
 
 (declaim (type (integer (0) (#. (expt 2 15))) +threads-per-core+))
 (declaim (type (integer (0) (#. (expt 2 15))) +single-core-threads+))
@@ -31,6 +32,9 @@
               (format nil "Idle Web Worker (#~d of ~d)" i count))))
 
 (defun swank-connected-p ()
+  "Detect whether Swank is connected. 
+
+Used to determine whether to resignal errors."
   (and (find-package "SWANK")
        (ignore-errors
          (funcall (coerce (intern "CONNECTION-INFO" :swank) 'function)))))
@@ -48,8 +52,8 @@
   (name-all-threads-idle taskmaster))
 
 (defmethod shutdown ((taskmaster thread-pool-taskmaster))
+  "Idempotent. Shut down the Taskmaster."
   (when-let (pool (taskmaster-thread-pool taskmaster))
-    ;; NB: harmless to call more than once.
     (setf (taskmaster-thread-pool taskmaster) nil)
     ;; Haven't actually seen any errors, but seems wise to be safe here,
     ;; since we're about to lose the only reference to it.
@@ -229,5 +233,6 @@ Tried to start a thread named ~a with ~s"
 ~:[all interfaces~;~:*Address ~a~], ~
 Port ~d"
                        (acceptor-address (taskmaster-acceptor taskmaster))
-
-                       (the (integer 1 65534) (acceptor-port (taskmaster-acceptor taskmaster)))))))
+                       
+                       (the (integer 1 65534)
+                            (acceptor-port (taskmaster-acceptor taskmaster)))))))
