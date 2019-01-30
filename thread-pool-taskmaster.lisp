@@ -3,7 +3,8 @@
 (declaim (optimize (safety 3) (speed 3)))
 
 (defclass thread-pool-taskmaster (one-thread-per-connection-taskmaster)
-  ((thread-pool :accessor taskmaster-thread-pool))
+  ((thread-pool :accessor taskmaster-thread-pool)
+   (thread-pool-channel :accessor taskmaster-thread-pool-channel))
   (:default-initargs
    :worker-thread-name-format "Web Worker ~a")
   (:documentation
@@ -21,15 +22,15 @@
 (declaim (type (integer (0) (#. (expt 2 15))) +threads-per-core+))
 (declaim (type (integer (0) (#. (expt 2 15))) +single-core-threads+))
 
-(defun name-all-threads-idle (taskmaster)
-  (loop for thread in (slot-value
-                       (slot-value (taskmaster-thread-pool taskmaster)
-                                   'cl-threadpool::threads)
-                       'cl-threadpool::threads)
-     for i fixnum from 1
-     with count = (taskmaster-max-thread-count taskmaster)
-     do (setf (sb-thread:thread-name thread)
-              (format nil "Idle Web Worker (#~d of ~d)" i count))))
+#+ (or) (defun name-all-threads-idle (taskmaster)
+          (loop for thread in (slot-value
+                               (slot-value (taskmaster-thread-pool taskmaster)
+                                           'cl-threadpool::threads)
+                               'cl-threadpool::threads)
+             for i fixnum from 1
+             with count = (taskmaster-max-thread-count taskmaster)
+             do (setf (sb-thread:thread-name thread)
+                      (format nil "Idle Web Worker (#~d of ~d)" i count))))
 
 (defun swank-connected-p ()
   "Detect whether Swank is connected.
@@ -43,13 +44,12 @@ Used to determine whether to resignal errors."
                                        &rest initargs)
   (declare (ignore initargs))
   (setf (taskmaster-thread-pool taskmaster)
-        (cl-threadpool:make-threadpool
+        (lparallel:make-kernel
          (taskmaster-max-thread-count taskmaster)
-         :max-queue-size +max-queue-size-for-thread-pool+
-         :name "Web Workers"
-         :resignal-job-conditions (swank-connected-p)))
-  (cl-threadpool:start (taskmaster-thread-pool taskmaster))
-  (name-all-threads-idle taskmaster))
+         :name "Web Workers"))
+  
+  (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
+    (setf (taskmaster-thread-pool-channel taskmaster) (lparallel:make-channel))))
 
 (defmethod shutdown ((taskmaster thread-pool-taskmaster))
   "Idempotent. Shut down the Taskmaster."
@@ -57,7 +57,8 @@ Used to determine whether to resignal errors."
     (setf (taskmaster-thread-pool taskmaster) nil)
     ;; Haven't actually seen any errors, but seems wise to be safe here,
     ;; since we're about to lose the only reference to it.
-    (ignore-errors (cl-threadpool:stop pool)))
+    (ignore-errors (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
+                     (lparallel:end-kernel :wait t))))
   (call-next-method))
 
 (define-memo-function cores*threads-per-core (cores)
@@ -178,12 +179,12 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
 (defun handle-incoming-connection% (taskmaster socket)
   (hunchentoot::increment-taskmaster-accept-count taskmaster)
   (handler-bind
-      ((cl-threadpool:threadpool-error
-        (lambda (cond)
-          (verbose:fatal '(:threadpool-worker :web-worker :worker-error) "{~a} Thread pool error: ~a"
-                         (thread-name (current-thread)) cond)
-          (too-many-taskmaster-requests taskmaster socket)
-          (hunchentoot::send-service-unavailable-reply taskmaster socket))))
+      (#+ (or) (cl-threadpool:threadpool-error
+                (lambda (cond)
+                  (verbose:fatal '(:threadpool-worker :web-worker :worker-error) "{~a} Thread pool error: ~a"
+                                 (thread-name (current-thread)) cond)
+                  (too-many-taskmaster-requests taskmaster socket)
+                  (hunchentoot::send-service-unavailable-reply taskmaster socket))))
     (verbose:info '(:threadpool-worker :web-worker :accepting) "{~a} processing ~s via ~a"
                   (thread-name (current-thread)) (safe-client-as-string socket) (taskmaster-acceptor taskmaster))
     (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket)))
@@ -210,10 +211,11 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
 new incoming connection ~a: ~a"
                           (safe-client-as-string socket)
                           cond)))))
-    (cl-threadpool:add-job (taskmaster-thread-pool taskmaster)
-                           (named-thread-pool-runner
-                               (:name (make-thread-name taskmaster socket))
-                             (handle-incoming-connection% taskmaster socket)))))
+    (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
+      (lparallel:submit-task (taskmaster-thread-pool-channel taskmaster)
+                             (named-thread-pool-runner
+                                 (:name (make-thread-name taskmaster socket))
+                               (handle-incoming-connection% taskmaster socket))))))
 
 (defmethod start-thread ((taskmaster thread-pool-taskmaster)
                          thunk &key name)
