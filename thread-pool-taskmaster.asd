@@ -12,6 +12,7 @@
                :hunchentoot
                :lparallel
                :oliphaunt
+               :verbose
                )
   :components
   ((:file "package")
