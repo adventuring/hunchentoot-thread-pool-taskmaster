@@ -10,6 +10,7 @@
                :alexandria
                :fare-memoization
                :hunchentoot
+               :lparallel
                :oliphaunt
                )
   :components
