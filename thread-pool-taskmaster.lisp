@@ -30,6 +30,15 @@ Used to determine whether to resignal errors."
        (ignore-errors
          (funcall (coerce (intern "CONNECTION-INFO" :swank) 'function)))))
 
+(defun name-idle-threads-sequentially (taskmaster)
+  (let ((n 0)
+        (count (the fixnum (taskmaster-max-thread-count taskmaster))))
+    (dolist (thread (all-threads))
+      (when (string-equal "Idle Web Worker" (thread-name thread))
+        (setf (thread-name thread)
+              (format nil "Idle Web Worker № ~:d (of ~:d)"
+                      (incf (the fixnum n)) count))))))
+
 (defmethod initialize-instance :after ((taskmaster thread-pool-taskmaster)
                                        &rest initargs)
   (declare (ignore initargs))
@@ -37,6 +46,8 @@ Used to determine whether to resignal errors."
         (lparallel:make-kernel
          (taskmaster-max-thread-count taskmaster)
          :name "Idle Web Worker"))
+  
+  (name-idle-threads-sequentially taskmaster)
   
   (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
     (setf (taskmaster-thread-pool-channel taskmaster) (lparallel:make-channel))))
