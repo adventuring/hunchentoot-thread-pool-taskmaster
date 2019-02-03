@@ -173,15 +173,8 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
   (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket))
 
 (defun safe-client-as-string (socket)
-  (handler-bind
-      (#+sbcl
-       (sb-bsd-sockets:bad-file-descriptor-error
-        (lambda (c) (declare (ignore c))
-                "Disconnected Client"))
-       (usocket:bad-file-descriptor-error
-        (lambda (c) (declare (ignore c))
-                "Disconnected Client")))
-    (client-as-string socket)))
+  (or (ignore-errors (client-as-string socket))
+      "Disconnected Client"))
 
 (defmethod handle-incoming-connection ((taskmaster thread-pool-taskmaster)
                                        socket)
