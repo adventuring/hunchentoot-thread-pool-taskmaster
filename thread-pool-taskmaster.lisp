@@ -116,7 +116,7 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
            (verbose:debug '(:thread-pool-worker :worker-signal :work-abandoned)
                           "Condition signalled: worker ~a signal ~:(~a~)~%~a~%~s"
                           ,name (class-of condition) condition
-                          (trivial-backtrace:backtrace-string condition))
+                          (ignore-errors (trivial-backtrace:backtrace-string)))
            (abort))))
      ,@body))
 
@@ -181,7 +181,11 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
   (hunchentoot::increment-taskmaster-accept-count taskmaster)
   (verbose:info '(:web-worker :accepting) "{~a} processing ~s via ~a"
                 (thread-name (current-thread)) (safe-client-as-string socket) (taskmaster-acceptor taskmaster))
-  (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket))
+  (handler-bind (#+sbcl (sb-int:closed-stream-error 
+                         (lambda (c)
+                           (v:info :disconnected "~s ~a" c)
+                           (return-from handle-incoming-connection%))))
+    (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket)))
 
 (defun safe-client-as-string (socket)
   (or (ignore-errors (client-as-string socket))
