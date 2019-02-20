@@ -10,10 +10,10 @@
   (:documentation
    "A taskmaster that uses a thread pool to dispatch incoming requests."))
 
-(defconstant +threads-per-core+ 2
-  "Must be an (UNSIGNED-BYTE 15) and non-zero. 2 seems nice?")
+(defconstant +threads-per-core+ 24
+  "Must be an (UNSIGNED-BYTE 15) and non-zero.")
 
-(defconstant +single-core-threads+ 4
+(defconstant +single-core-threads+ 32
   "More threads than otherwise expected on a single-core machine.")
 
 (defconstant +max-queue-size-for-thread-pool+ #x100
