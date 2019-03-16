@@ -93,7 +93,7 @@ Used to determine whether to resignal errors."
                           "Error signalled: worker ~a: ~
 SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
                           ,name condition)
-           (abort)))
+           (abort condition)))
         (error
          (lambda (condition)
            (verbose:fatal '(:thread-pool-worker :worker-error)
@@ -117,7 +117,7 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
                           "Condition signalled: worker ~a signal ~:(~a~)~%~a~%~s"
                           ,name (class-of condition) condition
                           (ignore-errors (trivial-backtrace:backtrace-string)))
-           (abort))))
+           (abort condition))))
      ,@body))
 
 (defmacro with-pool-thread-restarts ((name) &body body)
@@ -129,7 +129,7 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
               ((continue (lambda () (go ,restart-top))
                  :report-function (lambda (s)
                                     (princ (concatenate 'string "Restart " ,name) s)))
-               (abort #'null
+               (abort (lambda () (throw 'bazinga nil))
                  :report-function (lambda (s)
                                     (princ (concatenate 'string "Abandon " ,name) s))))
             (with-mulligan-handlers (,name ,mulligan)
@@ -140,15 +140,16 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
   (let ((idle-name (gensym "IDLE-NAME-"))
         (thread-name (gensym "THREAD-NAME-")))
     `(lambda ()
-       (let* ((,idle-name (thread-name (current-thread)))
-              (,thread-name ,name))
-         (setf (sb-thread:thread-name (current-thread)) ,thread-name)
-         (unwind-protect
-              (with-pool-thread-restarts (,thread-name)
-                (verbose:info '(:threadpool-worker :web-worker :worker-start) "~a working" ,thread-name)
-                ,@body)
-           (verbose:info '(:threadpool-worker :web-worker :worker-finish) "~a done" ,thread-name)
-           (setf (sb-thread:thread-name (current-thread)) ,idle-name)))))
+       (catch 'bazinga
+         (let* ((,idle-name (thread-name (current-thread)))
+                (,thread-name ,name))
+           (setf (sb-thread:thread-name (current-thread)) ,thread-name)
+           (unwind-protect
+                (with-pool-thread-restarts (,thread-name)
+                  (verbose:info '(:threadpool-worker :web-worker :worker-start) "~a working" ,thread-name)
+                  ,@body)
+             (verbose:info '(:threadpool-worker :web-worker :worker-finish) "~a done" ,thread-name)
+             (setf (sb-thread:thread-name (current-thread)) ,idle-name))))))
   #-sbcl
   `(lambda () ,@body))
 
