@@ -174,7 +174,11 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
 
 (defun safe-client-as-string (socket)
   (handler-bind
-      ((usocket:bad-file-descriptor-error
+      (#+sbcl
+       (sb-pcl::no-applicable-method-error
+        (lambda (c) (declare (ignore c))
+                "No Client"))
+       (usocket:bad-file-descriptor-error
         (lambda (c) (declare (ignore c))
                 "Disconnected Client")))
     (client-as-string socket)))
