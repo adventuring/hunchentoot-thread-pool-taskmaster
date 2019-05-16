@@ -168,16 +168,9 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
 
 (defun handle-incoming-connection% (taskmaster socket)
   (hunchentoot::increment-taskmaster-accept-count taskmaster)
-  (handler-bind
-      (#+ (or) (cl-threadpool:threadpool-error
-                (lambda (cond)
-                  (verbose:fatal '(:threadpool-worker :web-worker :worker-error) "{~a} Thread pool error: ~a"
-                                 (thread-name (current-thread)) cond)
-                  (too-many-taskmaster-requests taskmaster socket)
-                  (hunchentoot::send-service-unavailable-reply taskmaster socket))))
-    (verbose:info '(:threadpool-worker :web-worker :accepting) "{~a} processing ~s via ~a"
-                  (thread-name (current-thread)) (safe-client-as-string socket) (taskmaster-acceptor taskmaster))
-    (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket)))
+  (verbose:info '(:threadpool-worker :web-worker :accepting) "{~a} processing ~s via ~a"
+                (thread-name (current-thread)) (safe-client-as-string socket) (taskmaster-acceptor taskmaster))
+  (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket))
 
 (defun safe-client-as-string (socket)
   (handler-bind
