@@ -10,10 +10,10 @@
   (:documentation
    "A taskmaster that uses a thread pool to dispatch incoming requests."))
 
-(defconstant +threads-per-core+ 2
-  "Must be an (UNSIGNED-BYTE 15) and non-zero. 2 seems nice?")
+(defconstant +threads-per-core+ 8
+  "Must be an (UNSIGNED-BYTE 15) and non-zero.")
 
-(defconstant +single-core-threads+ 4
+(defconstant +single-core-threads+ 16
   "More threads than otherwise expected on a single-core machine.")
 
 (defconstant +max-queue-size-for-thread-pool+ #x100
@@ -30,13 +30,24 @@ Used to determine whether to resignal errors."
        (ignore-errors
          (funcall (coerce (intern "CONNECTION-INFO" :swank) 'function)))))
 
+(defun name-idle-threads-sequentially (taskmaster)
+  (let ((n 0)
+        (count (the fixnum (taskmaster-max-thread-count taskmaster))))
+    (dolist (thread (all-threads))
+      (when (string-equal "Idle Web Worker" (thread-name thread))
+        (setf (thread-name thread)
+              (format nil "Idle Web Worker № ~:d (of ~:d)"
+                      (incf (the fixnum n)) count))))))
+
 (defmethod initialize-instance :after ((taskmaster thread-pool-taskmaster)
                                        &rest initargs)
   (declare (ignore initargs))
   (setf (taskmaster-thread-pool taskmaster)
         (lparallel:make-kernel
          (taskmaster-max-thread-count taskmaster)
-         :name "Web Workers"))
+         :name "Idle Web Worker"))
+  
+  (name-idle-threads-sequentially taskmaster)
   
   (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
     (setf (taskmaster-thread-pool-channel taskmaster) (lparallel:make-channel))))
@@ -82,7 +93,7 @@ Used to determine whether to resignal errors."
                           "Error signalled: worker ~a: ~
 SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
                           ,name condition)
-           (abort)))
+           (abort condition)))
         (error
          (lambda (condition)
            (verbose:fatal '(:thread-pool-worker :worker-error)
@@ -105,8 +116,8 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
            (verbose:debug '(:thread-pool-worker :worker-signal :work-abandoned)
                           "Condition signalled: worker ~a signal ~:(~a~)~%~a~%~s"
                           ,name (class-of condition) condition
-                          (trivial-backtrace:backtrace-string condition))
-           (abort))))
+                          (ignore-errors (trivial-backtrace:backtrace-string)))
+           (abort condition))))
      ,@body))
 
 (defmacro with-pool-thread-restarts ((name) &body body)
@@ -118,7 +129,7 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
               ((continue (lambda () (go ,restart-top))
                  :report-function (lambda (s)
                                     (princ (concatenate 'string "Restart " ,name) s)))
-               (abort #'null
+               (abort (lambda () (throw 'bazinga nil))
                  :report-function (lambda (s)
                                     (princ (concatenate 'string "Abandon " ,name) s))))
             (with-mulligan-handlers (,name ,mulligan)
@@ -129,15 +140,16 @@ SB-BSD-Sockets:Bad-File-Descriptor-Error:~%~a"
   (let ((idle-name (gensym "IDLE-NAME-"))
         (thread-name (gensym "THREAD-NAME-")))
     `(lambda ()
-       (let* ((,idle-name (thread-name (current-thread)))
-              (,thread-name ,name))
-         (setf (sb-thread:thread-name (current-thread)) ,thread-name)
-         (unwind-protect
-              (with-pool-thread-restarts (,thread-name)
-                (verbose:info '(:threadpool-worker :web-worker :worker-start) "~a working" ,thread-name)
-                ,@body)
-           (verbose:info '(:threadpool-worker :web-worker :worker-finish) "~a done" ,thread-name)
-           (setf (sb-thread:thread-name (current-thread)) ,idle-name)))))
+       (catch 'bazinga
+         (let* ((,idle-name (thread-name (current-thread)))
+                (,thread-name ,name))
+           (setf (sb-thread:thread-name (current-thread)) ,thread-name)
+           (unwind-protect
+                (with-pool-thread-restarts (,thread-name)
+                  (verbose:info '(:threadpool-worker :web-worker :worker-start) "~a working" ,thread-name)
+                  ,@body)
+             (verbose:info '(:threadpool-worker :web-worker :worker-finish) "~a done" ,thread-name)
+             (setf (sb-thread:thread-name (current-thread)) ,idle-name))))))
   #-sbcl
   `(lambda () ,@body))
 
@@ -168,9 +180,13 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
 
 (defun handle-incoming-connection% (taskmaster socket)
   (hunchentoot::increment-taskmaster-accept-count taskmaster)
-  (verbose:info '(:threadpool-worker :web-worker :accepting) "{~a} processing ~s via ~a"
+  (verbose:info '(:web-worker :accepting) "{~a} processing ~s via ~a"
                 (thread-name (current-thread)) (safe-client-as-string socket) (taskmaster-acceptor taskmaster))
-  (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket))
+  (handler-bind (#+sbcl (sb-int:closed-stream-error 
+                         (lambda (c)
+                           (v:info :disconnected "~s ~a" c)
+                           (return-from handle-incoming-connection%))))
+    (hunchentoot::process-connection (taskmaster-acceptor taskmaster) socket)))
 
 (defun safe-client-as-string (socket)
   (handler-bind
