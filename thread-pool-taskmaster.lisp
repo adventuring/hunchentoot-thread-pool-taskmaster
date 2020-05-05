@@ -17,7 +17,7 @@
   "More threads than otherwise expected on a single-core machine.")
 
 (defconstant +max-queue-size-for-thread-pool+ #x100
-  "What is the maximum size allowed for a thread pool?")
+  "What is the maximum queue size allowed for a thread pool?")
 
 (declaim (type (integer (0) (#. (expt 2 15))) +threads-per-core+))
 (declaim (type (integer (0) (#. (expt 2 15))) +single-core-threads+))
@@ -46,20 +46,20 @@ Used to determine whether to resignal errors."
         (lparallel:make-kernel
          (taskmaster-max-thread-count taskmaster)
          :name "Idle Web Worker"))
-  
+
   (name-idle-threads-sequentially taskmaster)
-  
+
   (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
     (setf (taskmaster-thread-pool-channel taskmaster) (lparallel:make-channel))))
 
 (defmethod shutdown ((taskmaster thread-pool-taskmaster))
   "Idempotent. Shut down the Taskmaster."
   (when-let (pool (taskmaster-thread-pool taskmaster))
-    (setf (taskmaster-thread-pool taskmaster) nil)
     ;; Haven't actually seen any errors, but seems wise to be safe here,
     ;; since we're about to lose the only reference to it.
     (ignore-errors (let ((lparallel:*kernel* (taskmaster-thread-pool taskmaster)))
-                     (lparallel:end-kernel :wait t))))
+                     (lparallel:end-kernel :wait t)))
+    (setf (taskmaster-thread-pool taskmaster) nil))
   (call-next-method))
 
 (define-memo-function cores*threads-per-core (cores)
@@ -182,7 +182,7 @@ This version, unlike Hunchentoot's builtins, should work with IPv6 🤞"
   (hunchentoot::increment-taskmaster-accept-count taskmaster)
   (verbose:info '(:web-worker :accepting) "{~a} processing ~s via ~a"
                 (thread-name (current-thread)) (safe-client-as-string socket) (taskmaster-acceptor taskmaster))
-  (handler-bind (#+sbcl (sb-int:closed-stream-error 
+  (handler-bind (#+sbcl (sb-int:closed-stream-error
                          (lambda (c)
                            (v:info :disconnected "~s ~a" c)
                            (return-from handle-incoming-connection%))))
